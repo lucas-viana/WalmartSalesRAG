@@ -2,6 +2,6 @@ gunicorn
 flask
 flask-cors
 pinecone
-google-genai
+google-generativeai
 python-dotenv
 pandas
