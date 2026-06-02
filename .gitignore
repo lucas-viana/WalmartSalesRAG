@@ -37,7 +37,3 @@ dist/
 .DS_Store
 Thumbs.db
 .vscode/
-
-# Local data/cache
-chroma_data/
-*.sqlite3
