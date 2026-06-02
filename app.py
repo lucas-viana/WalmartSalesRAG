@@ -82,4 +82,4 @@ def fazer_pergunta():
 
 if __name__ == '__main__':
     print("Servidor RAG no ar! Aguardando perguntas...")
-    app.run(debug=True, port=5000)
+    app.run()
