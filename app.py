@@ -1,85 +1,63 @@
 import os
 from flask import Flask, request, jsonify
-from flask_cors import CORS 
-import chromadb
 import google.generativeai as genai
-from chromadb import Documents, EmbeddingFunction, Embeddings
+from pinecone import Pinecone
 from dotenv import load_dotenv
 
-# 1. Configurações Iniciais
 load_dotenv()
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 app = Flask(__name__)
-CORS(app) # Liberando acesso para o Frontend
 
-class CustomGoogleEmbeddingFunction(EmbeddingFunction):
-    def __init__(self, api_key: str):
-        genai.configure(api_key=api_key)
-        self.model = "models/gemini-embedding-2" 
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+PINECONE_INDEX_NAME = "vendas-walmart"
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-2.5-flash') 
 
-    def __call__(self, input: Documents) -> Embeddings:
-        resultado = genai.embed_content(
-            model=self.model,
-            content=input,
-            task_type="retrieval_document"
-        )
-        emb = resultado['embedding']
-        if isinstance(emb[0], float):
-            return [emb]
-        return emb
-
-funcao_embedding = CustomGoogleEmbeddingFunction(api_key=GOOGLE_API_KEY)
-
-chroma_client = chromadb.PersistentClient(path="./chroma_data")
-colecao_vendas = chroma_client.get_collection(
-    name="walmart_vendas",
-    embedding_function=funcao_embedding
-)
-
-
-modelo_texto = genai.GenerativeModel('gemini-2.5-flash')
+pc = Pinecone(api_key=PINECONE_API_KEY)
+index = pc.Index(PINECONE_INDEX_NAME)
 
 @app.route('/perguntar', methods=['POST'])
-def fazer_pergunta():
+def perguntar():
     try:
-        dados = request.json
-        pergunta_usuario = dados.get('pergunta')
-        
-        if not pergunta_usuario:
-            return jsonify({"erro": "A pergunta é obrigatória."}), 400
+        data = request.get_json()
+        pergunta = data.get("pergunta")
 
+        if not pergunta:
+            return jsonify({"erro": "A chave 'pergunta' é obrigatória no JSON."}), 400
 
-        resultados_busca = colecao_vendas.query(
-            query_texts=[pergunta_usuario],
-            n_results=1 
+        embedding_response = pc.inference.embed(
+            model="llama-text-embed-v2",
+            inputs=[pergunta],
+            parameters={"input_type": "query"} 
         )
+        vetor_pergunta = embedding_response[0].values
+
+        busca_pinecone = index.query(
+            vector=vetor_pergunta,
+            top_k=3,
+            include_metadata=True 
+        )
+
+        contextos = [match['metadata']['texto'] for match in busca_pinecone['matches']]
+        contexto_unido = "\n\n".join(contextos)
+
+        prompt_final = f"""Você é um assistente de análise de dados. 
+Use EXCLUSIVAMENTE as informações abaixo para responder à pergunta do usuário.
+Se a informação não estiver no contexto, diga que não sabe.
+
+Contexto (Dados do Walmart):
+{contexto_unido}
+
+Pergunta: {pergunta}
+"""
         
-        textos_encontrados = resultados_busca['documents'][0]
-        contexto_unido = "\n".join(textos_encontrados)
-        
-        prompt_final = f"""Você é um analista financeiro sênior de uma gigante do varejo.
-        Responda à pergunta do usuário baseando-se ÚNICA E EXCLUSIVAMENTE nas informações de contexto abaixo.
-        Se a informação não estiver no contexto, diga que não tem dados suficientes. Não invente valores.
-        
-        CONTEXTO OBTIDO DO BANCO DE DADOS:
-        {contexto_unido}
-        
-        PERGUNTA DO USUÁRIO: {pergunta_usuario}
-        
-        Sua resposta (seja analítico, claro e direto):"""
-        
-        resposta_ia = modelo_texto.generate_content(prompt_final)
-        
-        return jsonify({
-            "status": "sucesso",
-            "resposta": resposta_ia.text,
-            "fontes_utilizadas": textos_encontrados 
-        })
-        
+        resposta_llm = model.generate_content(prompt_final)
+
+        return jsonify({"resposta": resposta_llm.text}), 200
+
     except Exception as e:
-        return jsonify({"erro": str(e)}), 500
+        return jsonify({"erro_interno": str(e)}), 400
 
 if __name__ == '__main__':
-    print("Servidor RAG no ar! Aguardando perguntas...")
-    app.run()
+    app.run(host='0.0.0.0', port=10000)
