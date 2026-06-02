@@ -52,7 +52,7 @@ def fazer_pergunta():
 
         resultados_busca = colecao_vendas.query(
             query_texts=[pergunta_usuario],
-            n_results=53 
+            n_results=1 
         )
         
         textos_encontrados = resultados_busca['documents'][0]
