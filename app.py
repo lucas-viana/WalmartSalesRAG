@@ -17,6 +17,10 @@ model = genai.GenerativeModel('gemini-2.5-flash')
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(PINECONE_INDEX_NAME)
 
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({"message": "Bem-vindo ao servidor de perguntas!"})
+
 @app.route('/perguntar', methods=['POST'])
 def perguntar():
     try:
