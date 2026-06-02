@@ -38,7 +38,7 @@ colecao_vendas = chroma_client.get_collection(
 )
 
 
-modelo_texto = genai.GenerativeModel('gemini-2.5-flash', temperature=0.5)
+modelo_texto = genai.GenerativeModel('gemini-2.5-flash')
 
 @app.route('/perguntar', methods=['POST'])
 def fazer_pergunta():
